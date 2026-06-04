@@ -61,8 +61,8 @@ all: main-build
 main-build: COM_ex3.elf secondary-outputs
 
 # Tool invocations
-COM_ex3.elf COM_ex3.map: $(OBJS) $(USER_OBJS) C:\Users\Philippe\Documents\STM32\COM_ex3\STM32H563ZITX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "COM_ex3.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m33 -T"C:\Users\Philippe\Documents\STM32\COM_ex3\STM32H563ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="COM_ex3.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+COM_ex3.elf COM_ex3.map: $(OBJS) $(USER_OBJS) C:\Users\Philippe\ Arsenault\Documents\Labo\NUCLEO-H563ZIT6\COM_ex3\STM32H563ZITX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "COM_ex3.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m33 -T"C:\Users\Philippe Arsenault\Documents\Labo\NUCLEO-H563ZIT6\COM_ex3\STM32H563ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="COM_ex3.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
