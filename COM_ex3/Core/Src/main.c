@@ -128,8 +128,10 @@ int main(void)
   BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc1_buffer, 2);
   HAL_ADC_Start_DMA(&hadc2, (uint32_t*)adc2_buffer, 2);
+  //HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
+  //HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED);
 
-
+  //HAL_Delay(100);
 
   /* Start PWM outputs */
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
@@ -140,9 +142,6 @@ int main(void)
   __HAL_TIM_MOE_ENABLE(&htim1);
 
   /* Start ADC DMA (4 samples total) */
-
-
-
 
   /* Print startup message */
   printf("System Ready\r\n");
@@ -176,11 +175,7 @@ int main(void)
   {
     /* --- UART polling (menu input) --- */
     UART_ProcessByte();
-    printf("ADC1=%u %u | ADC2=%u %u\r\n",
-  		  adc1_buffer[0],
-			  adc1_buffer[1],
-			  adc2_buffer[0],
-			  adc2_buffer[1]);
+    //printf("ADC1=%u %u | ADC2=%u %u\r\n",adc1_buffer[0],adc1_buffer[1],adc2_buffer[0],adc2_buffer[1]);
 
     /* --- Show menu when button triggers it --- */
     if (menu_state == 1)
@@ -241,13 +236,15 @@ int main(void)
     /* --- periodic ADC print (debug) --- */
     static uint32_t lastTick = 0;
 
-    if (HAL_GetTick() - lastTick > 5)
-    {
-      lastTick = HAL_GetTick();
-      LL_ADC_REG_StartConversion(ADC1);
-      LL_ADC_REG_StartConversion(ADC2);
-      //HAL_Delay(5);
 
+    if (HAL_GetTick() - lastTick > 25)
+    {
+    lastTick = HAL_GetTick();
+    LL_ADC_REG_StartConversion(ADC1);
+    LL_ADC_REG_StartConversion(ADC2);
+    //HAL_Delay(1);
+
+    printf("ADC1=%u %u | ADC2=%u %u\r\n",adc1_buffer[0],adc1_buffer[1],adc2_buffer[0],adc2_buffer[1]);
 
     }
 //TIA1 = adc1_buffer[0] * 4;
@@ -332,6 +329,7 @@ void UART_ProcessByte(void)
     {
       rx_buffer[rx_index] = '\0';
       input_ready = 1;
+      //rx_index = 0;
     }
     else
     {
