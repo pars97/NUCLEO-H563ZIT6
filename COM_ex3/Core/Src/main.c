@@ -57,6 +57,26 @@ uint8_t selected_option = 0;
 
 volatile uint16_t adc1_buffer[2];
 volatile uint16_t adc2_buffer[2];
+uint16_t ADC1_CH0[8];
+uint16_t ADC1_CH1[8];
+uint16_t ADC2_CH0[8];
+uint16_t ADC2_CH1[8];
+uint16_t ADC1_CH0_filt;
+uint16_t ADC1_CH1_filt;
+uint16_t ADC2_CH0_filt;
+uint16_t ADC2_CH1_filt;
+
+uint16_t Through_MAX_t[4][2];
+uint16_t Drop_MAX_t[4][2];
+uint16_t Through_MAX[2];
+uint16_t Drop_MAX[2];
+uint16_t Factor;
+uint16_t db_IL;
+int16_t kp;
+int16_t ki;
+int16_t integral;
+
+
 
 /* USER CODE END PV */
 
@@ -68,7 +88,8 @@ static void MPU_Config(void);
 void UART_ProcessByte(void);
 void PrintMenu(void);
 
-void SetDAC(int value);
+void SetDAC_1(int value);
+void SetDAC_2(int value);
 void SetPWM(TIM_HandleTypeDef *htim, uint32_t channel, int percent);
 
 /* ADC read helpers (DMA shared buffer) */
@@ -170,83 +191,225 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  //static uint32_t lastTick = 0;
+  static uint32_t printTick = 0;
+  int16_t calculation_MRR3 = 0;
+  int16_t calculation_MRR4 = 0;
+  static uint16_t DAC_Value_MRR3 = 4095;
+  static uint16_t DAC_Value_MRR4 = 4095;
+  memset(ADC1_CH0, 0, sizeof(ADC1_CH0));
+  memset(ADC1_CH1, 0, sizeof(ADC1_CH1));
+  memset(ADC2_CH0, 0, sizeof(ADC2_CH0));
+  memset(ADC2_CH1, 0, sizeof(ADC2_CH1));
+  uint16_t ADC1_CH0_filt = 0;
+  uint16_t ADC1_CH1_filt = 0;
+  uint16_t ADC2_CH0_filt = 0;
+  uint16_t ADC2_CH1_filt = 0;
+  uint16_t db_IL=0;
+  kp = 0;
+  ki = 0;
+  integral =0;
+
+  memset(Through_MAX, 0, sizeof(Through_MAX));
+  memset(Drop_MAX, 0, sizeof(Drop_MAX));
+  memset(Through_MAX_t, 0, sizeof(Through_MAX_t));
+  memset(Drop_MAX_t, 0, sizeof(Drop_MAX_t));
+
+  printf("Initialization Begin\r\n");
+
+  for (uint16_t i = 0; i < 4095; i++)
+  {
+	  SetDAC_2(i);
+			LL_ADC_REG_StartConversion(ADC1);
+			LL_ADC_REG_StartConversion(ADC2);
+			while(LL_ADC_REG_IsConversionOngoing(ADC1)||LL_ADC_REG_IsConversionOngoing(ADC2))
+						{ }
+			if(adc1_buffer[1]>Through_MAX_t[3][1])
+			{
+				Through_MAX_t[3][1]=adc1_buffer[1];
+				Through_MAX_t[3][0]=i;
+			}
+			if(Through_MAX_t[3][1]>Through_MAX_t[2][1])
+			{
+					Through_MAX_t[3][1]=Through_MAX_t[2][1];
+					Through_MAX_t[2][1]=adc1_buffer[1];
+					Through_MAX_t[2][1]=adc1_buffer[1];
+					Through_MAX_t[2][1]=i;
+			}
+
+			if(Through_MAX_t[2][1]>Through_MAX_t[1][1])
+			{
+					Through_MAX_t[2][1]=Through_MAX_t[1][1];
+					Through_MAX_t[1][1]=adc1_buffer[1];
+					Through_MAX_t[1][1]=adc1_buffer[1];
+					Through_MAX_t[1][1]=i;
+			}
+
+			if(Through_MAX_t[1][1]>Through_MAX_t[0][1])
+			{
+					Through_MAX_t[1][1]=Through_MAX_t[0][1];
+					Through_MAX_t[0][1]=adc1_buffer[1];
+					Through_MAX_t[0][1]=adc1_buffer[1];
+					Through_MAX_t[0][1]=i;
+			}
+
+			if(adc2_buffer[1]>Drop_MAX_t[3][1])
+			{
+					Drop_MAX_t[3][1]=adc2_buffer[1];
+					Drop_MAX_t[3][0]=i;
+			}
+
+			if(Drop_MAX_t[3][1]>Drop_MAX_t[2][1])
+			{
+					Drop_MAX_t[3][1]=Drop_MAX_t[2][1];
+					Drop_MAX_t[2][1]=adc2_buffer[1];
+					Drop_MAX_t[2][1]=adc2_buffer[1];
+					Drop_MAX_t[2][1]=i;
+			}
+
+			if(Drop_MAX_t[2][1]>Drop_MAX_t[1][1])
+			{
+					Drop_MAX_t[2][1]=Drop_MAX_t[1][1];
+					Drop_MAX_t[1][1]=adc2_buffer[1];
+					Drop_MAX_t[1][1]=adc2_buffer[1];
+					Drop_MAX_t[1][1]=i;
+			}
+
+			if(Drop_MAX_t[1][1]>Drop_MAX_t[0][1])
+			{
+					Drop_MAX_t[1][1]=Drop_MAX_t[0][1];
+					Drop_MAX_t[0][1]=adc2_buffer[1];
+					Drop_MAX_t[0][1]=adc2_buffer[1];
+					Drop_MAX_t[0][1]=i;
+			}
+			HAL_Delay(1);
+
+  }
+	  Through_MAX[1] = (Through_MAX_t[3][1]+Through_MAX_t[2][1]+Through_MAX_t[1][1]+Through_MAX_t[0][1])>>2;
+	  Drop_MAX[1] = (Drop_MAX_t[3][1]+Drop_MAX_t[2][1]+Drop_MAX_t[1][1]+Drop_MAX_t[0][1])>>2;
+
+	  Factor = Through_MAX[1]/Drop_MAX[1];
+
+	  printf("Initialization End\r\n");
+
+
+
 
   while (1)
   {
-    /* --- UART polling (menu input) --- */
-    UART_ProcessByte();
-    //printf("ADC1=%u %u | ADC2=%u %u\r\n",adc1_buffer[0],adc1_buffer[1],adc2_buffer[0],adc2_buffer[1]);
+		if (LL_ADC_REG_IsConversionOngoing(ADC1)==0&&LL_ADC_REG_IsConversionOngoing(ADC2)==0)
+		{
+		LL_ADC_REG_StartConversion(ADC1);
+		LL_ADC_REG_StartConversion(ADC2);
+		while(LL_ADC_REG_IsConversionOngoing(ADC1)||LL_ADC_REG_IsConversionOngoing(ADC2))
+			{ }
 
-    /* --- Show menu when button triggers it --- */
-    if (menu_state == 1)
-    {
-      PrintMenu();
-      menu_state = 2;
-      rx_index = 0;
-    }
+		for (uint16_t i = 0; i < 4; i++)
+		{
+				ADC1_CH0[i]=ADC1_CH0[i+1];
+				ADC1_CH1[i]=ADC1_CH1[i+1];
+				ADC2_CH0[i]=ADC2_CH0[i+1];
+				ADC2_CH1[i]=ADC2_CH1[i+1];
+		}
+		ADC1_CH0[3]=adc1_buffer[0];
+	    ADC1_CH1[3]=adc1_buffer[1];
+	    ADC2_CH0[3]=adc2_buffer[0];
+		ADC2_CH1[3]=adc2_buffer[1];
 
-    /* --- Input received from UART --- */
-    if (input_ready)
-    {
-      input_ready = 0;
+		//ADC1_CH0_filt = ((ADC1_CH0[4]<<3)+(ADC1_CH0[3]<<2)+(ADC1_CH0[2]<<1)+ADC1_CH0[1]+ADC1_CH0[0])>>4;
+		//ADC1_CH1_filt = ((ADC1_CH1[4]<<3)+(ADC1_CH1[3]<<2)+(ADC1_CH1[2]<<1)+ADC1_CH1[1]+ADC1_CH1[0])>>4;
+		//ADC2_CH0_filt = ((ADC2_CH0[4]<<3)+(ADC2_CH0[3]<<2)+(ADC2_CH0[2]<<1)+ADC2_CH0[1]+ADC2_CH0[0])>>4;
+		//ADC2_CH1_filt = ((ADC2_CH1[4]<<3)+(ADC2_CH1[3]<<2)+(ADC2_CH1[2]<<1)+ADC2_CH1[1]+ADC2_CH1[0])>>4;
 
-      rx_buffer[rx_index] = '\0';
-      int value = atoi(rx_buffer);
-      rx_index = 0;
-
-      if (menu_state == 2)
-      {
-        selected_option = value;
-
-        printf("Selected: %d\r\n", selected_option);
-        printf("Enter value:\r\n");
-
-        menu_state = 3;
-      }
-      else if (menu_state == 3)
-      {
-        switch (selected_option)
-        {
-          case 1:
-            SetDAC(value);
-            break;
-
-          case 2:
-            SetPWM(&htim1, TIM_CHANNEL_1, value);
-            break;
-
-          case 3:
-            SetPWM(&htim3, TIM_CHANNEL_1, value);
-            break;
-
-          case 4:
-            SetPWM(&htim4, TIM_CHANNEL_1, value);
-            SetPWM(&htim4, TIM_CHANNEL_2, value);
-            break;
-
-          default:
-            printf("Invalid option\r\n");
-            break;
-        }
-
-        menu_state = 0;
-      }
-    }
-
-    /* --- periodic ADC print (debug) --- */
-    static uint32_t lastTick = 0;
+		ADC1_CH0_filt = ((ADC1_CH0[3])+(ADC1_CH0[2])+(ADC1_CH0[1])+ADC1_CH0[1])>>2;
+		ADC1_CH1_filt = ((ADC1_CH1[3])+(ADC1_CH1[2])+(ADC1_CH1[1])+ADC1_CH1[1])>>2;
+		ADC2_CH0_filt = ((ADC2_CH0[3])+(ADC2_CH0[2])+(ADC2_CH0[1])+ADC2_CH0[1])>>2;
+		ADC2_CH1_filt = ((ADC2_CH1[3])+(ADC2_CH1[2])+(ADC2_CH1[1])+ADC2_CH1[1])>>2;
 
 
-    if (HAL_GetTick() - lastTick > 25)
-    {
-    lastTick = HAL_GetTick();
-    LL_ADC_REG_StartConversion(ADC1);
-    LL_ADC_REG_StartConversion(ADC2);
-    //HAL_Delay(1);
 
-    printf("ADC1=%u %u | ADC2=%u %u\r\n",adc1_buffer[0],adc1_buffer[1],adc2_buffer[0],adc2_buffer[1]);
 
-    }
+
+
+		//calculation = (int16_t)adc2_buffer[1]-(int16_t)adc1_buffer[1];
+
+		calculation_MRR3 = ADC2_CH1_filt - (ADC1_CH1_filt>>0);
+		calculation_MRR4 = ADC2_CH0_filt - (ADC1_CH1_filt>>1);
+		//integral = integral + calculation;
+
+		//kp=1;
+		//ki=1;
+
+		//DAC_Value = ((DAC_Value+kp*calculation+ki*integral)>>6);
+
+		//if (DAC_Value>4096)
+		//	DAC_Value = 4096;
+
+		if (calculation_MRR3 >0)
+		{
+			if (DAC_Value_MRR3<4095)
+				DAC_Value_MRR3 = DAC_Value_MRR3 +1;
+			else
+			{
+				DAC_Value_MRR3 = 50;
+			HAL_Delay(100);
+			}
+		}
+
+		else if (calculation_MRR3 <0)
+		{
+			if (DAC_Value_MRR3>0)
+				DAC_Value_MRR3 = DAC_Value_MRR3 -1;
+			else
+			{
+				DAC_Value_MRR3 = 4000;
+			HAL_Delay(100);
+			}
+		}
+		else
+			DAC_Value_MRR3 = DAC_Value_MRR3;
+
+		/*if (calculation_MRR4 >0)
+				{
+					if (DAC_Value_MRR4<4095)
+						DAC_Value_MRR4 = DAC_Value_MRR4 +1;
+					else
+					{
+						DAC_Value_MRR4 = 50;
+					HAL_Delay(100);
+					}
+				}
+
+				else if (calculation_MRR4 <0)
+				{
+					if (DAC_Value_MRR4>0)
+						DAC_Value_MRR4 = DAC_Value_MRR4 -1;
+					else
+					{
+						DAC_Value_MRR4 = 4000;
+					HAL_Delay(100);
+					}
+				}
+				else
+					DAC_Value_MRR4 = DAC_Value_MRR4;*/
+
+		SetDAC_2(DAC_Value_MRR3);
+		//SetDAC_1(DAC_Value_MRR4);
+		HAL_Delay(5);
+		}
+
+
+
+
+
+    if (HAL_GetTick() - printTick > 10)
+	{
+	printf("ADC1=%u %u | ADC2=%u %u\r\n",ADC1_CH0_filt,ADC1_CH1_filt,ADC2_CH0_filt,ADC2_CH1_filt);
+	printf("DAC=%u \r\n",DAC_Value_MRR3);
+	//printf("DAC=%u %u \r\n",DAC_Value_MRR3, DAC_Value_MRR4);
+	printTick = HAL_GetTick();
+	}
+
 //TIA1 = adc1_buffer[0] * 4;
 
   }
@@ -350,7 +513,7 @@ void PrintMenu(void)
   printf("4: TIM4 PWM\r\n");
 }
 
-void SetDAC(int value)
+void SetDAC_2(int value)
 {
   if (value < 0) value = 0;
   if (value > 4095) value = 4095;
@@ -363,8 +526,21 @@ void SetDAC(int value)
   );
 
   HAL_DAC_Start(&hdac1, DAC_CHANNEL_2);
+}
 
-  printf("DAC=%d\r\n", value);
+void SetDAC_1(int value)
+{
+  if (value < 0) value = 0;
+  if (value > 4095) value = 4095;
+
+  HAL_DAC_SetValue(
+      &hdac1,
+      DAC_CHANNEL_1,
+      DAC_ALIGN_12B_R,
+      value
+  );
+
+  HAL_DAC_Start(&hdac1, DAC_CHANNEL_1);
 }
 
 void SetPWM(TIM_HandleTypeDef *htim, uint32_t channel, int percent)
