@@ -30,6 +30,13 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define RX_BUF_SIZE 32
+#define ADC_INSTANCES 2
+#define ADC_CHANNELS  2
+#define TOP_N 4
+#define IL_LUT_SIZE 401
+
+
 
 /* USER CODE END PD */
 
@@ -45,7 +52,7 @@ COM_InitTypeDef BspCOMInit;
 /* USER CODE BEGIN PV */
 __IO uint32_t BspButtonState = BUTTON_RELEASED;
 
-#define RX_BUF_SIZE 32
+
 
 uint8_t rx_byte;
 char rx_buffer[RX_BUF_SIZE];
@@ -55,27 +62,112 @@ uint8_t input_ready = 0;
 uint8_t menu_state = 0;
 uint8_t selected_option = 0;
 
+
+
+typedef struct
+{
+    uint16_t val[TOP_N];
+    uint16_t pos[TOP_N];
+} TopN_t;
+TopN_t peak[ADC_INSTANCES][ADC_CHANNELS];
+uint32_t avg_peak[ADC_INSTANCES][ADC_CHANNELS];
+uint32_t gain[ADC_INSTANCES][ADC_CHANNELS];
+
+typedef struct
+{
+    uint16_t buffer[8];
+    uint32_t sum;
+    uint8_t index;
+} MovingAverage8_t;
+
+typedef struct
+{
+    uint16_t peak;
+    uint32_t gain;
+    uint8_t enabled;
+} ADC_ChannelCal_t;
+
+typedef struct
+{
+    uint32_t G_T;
+    uint32_t G_D;
+} IL_Gain_t;
+
+ADC_ChannelCal_t adc_cal[4];
+uint16_t adc_norm[ADC_INSTANCES][ADC_CHANNELS];
+
 volatile uint16_t adc1_buffer[2];
 volatile uint16_t adc2_buffer[2];
 uint16_t ADC1_CH0[8];
 uint16_t ADC1_CH1[8];
 uint16_t ADC2_CH0[8];
 uint16_t ADC2_CH1[8];
-uint16_t ADC1_CH0_filt;
-uint16_t ADC1_CH1_filt;
-uint16_t ADC2_CH0_filt;
-uint16_t ADC2_CH1_filt;
+MovingAverage8_t ADC1_CH0_Filter;
+MovingAverage8_t ADC1_CH1_Filter;
+MovingAverage8_t ADC2_CH0_Filter;
+MovingAverage8_t ADC2_CH1_Filter;
 
-uint16_t Through_MAX_t[4][2];
-uint16_t Drop_MAX_t[4][2];
-uint16_t Through_MAX[2];
-uint16_t Drop_MAX[2];
 uint16_t Factor;
-uint16_t db_IL;
+uint16_t IL;
 int16_t kp;
 int16_t ki;
 int16_t integral;
+IL_Gain_t il_gain;
+uint8_t il_ready = 0;
 
+const uint16_t IL_LUT[IL_LUT_SIZE] = {
+    65535, 64785, 64043, 63310, 62585, 61869, 61161, 60461,
+    59769, 59084, 58408, 57740, 57079, 56425, 55779, 55141,
+    54510, 53886, 53269, 52659, 52056, 51460, 50871, 50289,
+    49713, 49144, 48582, 48026, 47476, 46932, 46395, 45864,
+    45339, 44820, 44307, 43800, 43299, 42803, 42313, 41829,
+    41350, 40876, 40409, 39946, 39489, 39037, 38590, 38148,
+    37711, 37280, 36853, 36431, 36014, 35602, 35194, 34792,
+    34393, 34000, 33610, 33226, 32845, 32469, 32098, 31730,
+    31367, 31008, 30653, 30302, 29955, 29612, 29273, 28938,
+    28607, 28280, 27956, 27636, 27320, 27007, 26698, 26392,
+    26090, 25791, 25496, 25204, 24916, 24631, 24349, 24070,
+    23794, 23522, 23253, 22987, 22723, 22463, 22206, 21952,
+    21701, 21452, 21207, 20964, 20724, 20487, 20252, 20020,
+    19791, 19565, 19341, 19119, 18901, 18684, 18470, 18259,
+    18050, 17843, 17639, 17437, 17237, 17040, 16845, 16652,
+    16462, 16273, 16087, 15903, 15721, 15541, 15363, 15187,
+    15013, 14841, 14671, 14504, 14337, 14173, 14011, 13851,
+    13692, 13535, 13381, 13227, 13076, 12926, 12778, 12632,
+    12487, 12344, 12203, 12063, 11925, 11789, 11654, 11521,
+    11389, 11258, 11129, 11002, 10876, 10752, 10629, 10507,
+    10387, 10268, 10150, 10034, 9919, 9806, 9693, 9582,
+    9473, 9364, 9257, 9151, 9046, 8943, 8840, 8739,
+    8639, 8540, 8443, 8346, 8250, 8156, 8063, 7970,
+    7879, 7789, 7700, 7612, 7524, 7438, 7353, 7269,
+    7186, 7104, 7022, 6942, 6862, 6784, 6706, 6629,
+    6554, 6478, 6404, 6331, 6259, 6187, 6116, 6046,
+    5977, 5908, 5841, 5774, 5708, 5643, 5578, 5514,
+    5451, 5389, 5327, 5266, 5206, 5146, 5087, 5029,
+    4971, 4914, 4858, 4803, 4748, 4693, 4640, 4586,
+    4534, 4482, 4431, 4380, 4330, 4280, 4231, 4183,
+    4135, 4088, 4041, 3995, 3949, 3904, 3859, 3815,
+    3771, 3728, 3685, 3643, 3601, 3560, 3519, 3479,
+    3439, 3400, 3361, 3323, 3285, 3247, 3210, 3173,
+    3137, 3101, 3065, 3030, 2996, 2961, 2927, 2894,
+    2861, 2828, 2796, 2764, 2732, 2701, 2670, 2639,
+    2609, 2579, 2550, 2520, 2492, 2463, 2435, 2407,
+    2379, 2352, 2325, 2299, 2272, 2246, 2221, 2195,
+    2170, 2145, 2121, 2096, 2072, 2049, 2025, 2002,
+    1979, 1956, 1934, 1912, 1890, 1868, 1847, 1826,
+    1805, 1784, 1764, 1744, 1724, 1704, 1685, 1665,
+    1646, 1627, 1609, 1590, 1572, 1554, 1536, 1519,
+    1501, 1484, 1467, 1450, 1434, 1417, 1401, 1385,
+    1369, 1354, 1338, 1323, 1308, 1293, 1278, 1263,
+    1249, 1234, 1220, 1206, 1193, 1179, 1165, 1152,
+    1139, 1126, 1113, 1100, 1088, 1075, 1063, 1051,
+    1039, 1027, 1015, 1003, 992, 981, 969, 958,
+    947, 936, 926, 915, 905, 894, 884, 874,
+    864, 854, 844, 835, 825, 816, 806, 797,
+    788, 779, 770, 761, 752, 744, 735, 727,
+    719, 710, 702, 694, 686, 678, 671, 663,
+    655
+};
 
 
 /* USER CODE END PV */
@@ -91,6 +183,15 @@ void PrintMenu(void);
 void SetDAC_1(int value);
 void SetDAC_2(int value);
 void SetPWM(TIM_HandleTypeDef *htim, uint32_t channel, int percent);
+
+void MovingAverage8_Init(MovingAverage8_t *filt);
+uint16_t MovingAverage8_Update(MovingAverage8_t *filt, uint16_t sample);
+void TopN_Insert(TopN_t *t, uint16_t value, uint16_t pos);
+uint32_t TopN_Average(TopN_t *t);
+void Calibration_Run(volatile uint16_t *adc1_buffer,volatile uint16_t *adc2_buffer);
+void Tune_IL_Gains(uint16_t adc_norm[2][2],TopN_t peak[2][2],IL_Gain_t *g,uint16_t x_centi_dB);
+static inline uint16_t IL_LUT_Get(uint16_t il_centi_db);
+
 
 /* ADC read helpers (DMA shared buffer) */
 //uint16_t Read_PF11(void);
@@ -132,6 +233,29 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
+  MovingAverage8_Init(&ADC1_CH0_Filter);
+  MovingAverage8_Init(&ADC1_CH1_Filter);
+  MovingAverage8_Init(&ADC2_CH0_Filter);
+  MovingAverage8_Init(&ADC2_CH1_Filter);
+
+  static uint32_t printTick = 0;
+  int16_t calculation_MRR3 = 0;
+  //int16_t calculation_MRR4 = 0;
+  static uint16_t DAC_Value_MRR3 = 4095;
+ // static uint16_t DAC_Value_MRR4 = 4095;
+  memset(ADC1_CH0, 0, sizeof(ADC1_CH0));
+  memset(ADC1_CH1, 0, sizeof(ADC1_CH1));
+  memset(ADC2_CH0, 0, sizeof(ADC2_CH0));
+  memset(ADC2_CH1, 0, sizeof(ADC2_CH1));
+  uint16_t ADC1_CH0_filt = 0;
+  uint16_t ADC1_CH1_filt = 0;
+  uint16_t ADC2_CH0_filt = 0;
+  uint16_t ADC2_CH1_filt = 0;
+  //uint16_t db_IL=0;
+
+  kp = 0;
+  ki = 0;
+  integral =0;
 
   /* USER CODE END SysInit */
 
@@ -192,108 +316,22 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   //static uint32_t lastTick = 0;
-  static uint32_t printTick = 0;
-  int16_t calculation_MRR3 = 0;
-  int16_t calculation_MRR4 = 0;
-  static uint16_t DAC_Value_MRR3 = 4095;
-  static uint16_t DAC_Value_MRR4 = 4095;
-  memset(ADC1_CH0, 0, sizeof(ADC1_CH0));
-  memset(ADC1_CH1, 0, sizeof(ADC1_CH1));
-  memset(ADC2_CH0, 0, sizeof(ADC2_CH0));
-  memset(ADC2_CH1, 0, sizeof(ADC2_CH1));
-  uint16_t ADC1_CH0_filt = 0;
-  uint16_t ADC1_CH1_filt = 0;
-  uint16_t ADC2_CH0_filt = 0;
-  uint16_t ADC2_CH1_filt = 0;
-  uint16_t db_IL=0;
-  kp = 0;
-  ki = 0;
-  integral =0;
 
-  memset(Through_MAX, 0, sizeof(Through_MAX));
-  memset(Drop_MAX, 0, sizeof(Drop_MAX));
-  memset(Through_MAX_t, 0, sizeof(Through_MAX_t));
-  memset(Drop_MAX_t, 0, sizeof(Drop_MAX_t));
+// SET THE INSERTION LOSS, 300 means 3db, 452 means 4.52 db loss
+  IL = 325;
 
-  printf("Initialization Begin\r\n");
+  Calibration_Run(adc1_buffer, adc2_buffer);
 
-  for (uint16_t i = 0; i < 4095; i++)
+  for (uint8_t a = 0; a < ADC_INSTANCES; a++)
   {
-	  SetDAC_2(i);
-			LL_ADC_REG_StartConversion(ADC1);
-			LL_ADC_REG_StartConversion(ADC2);
-			while(LL_ADC_REG_IsConversionOngoing(ADC1)||LL_ADC_REG_IsConversionOngoing(ADC2))
-						{ }
-			if(adc1_buffer[1]>Through_MAX_t[3][1])
-			{
-				Through_MAX_t[3][1]=adc1_buffer[1];
-				Through_MAX_t[3][0]=i;
-			}
-			if(Through_MAX_t[3][1]>Through_MAX_t[2][1])
-			{
-					Through_MAX_t[3][1]=Through_MAX_t[2][1];
-					Through_MAX_t[2][1]=adc1_buffer[1];
-					Through_MAX_t[2][1]=adc1_buffer[1];
-					Through_MAX_t[2][1]=i;
-			}
-
-			if(Through_MAX_t[2][1]>Through_MAX_t[1][1])
-			{
-					Through_MAX_t[2][1]=Through_MAX_t[1][1];
-					Through_MAX_t[1][1]=adc1_buffer[1];
-					Through_MAX_t[1][1]=adc1_buffer[1];
-					Through_MAX_t[1][1]=i;
-			}
-
-			if(Through_MAX_t[1][1]>Through_MAX_t[0][1])
-			{
-					Through_MAX_t[1][1]=Through_MAX_t[0][1];
-					Through_MAX_t[0][1]=adc1_buffer[1];
-					Through_MAX_t[0][1]=adc1_buffer[1];
-					Through_MAX_t[0][1]=i;
-			}
-
-			if(adc2_buffer[1]>Drop_MAX_t[3][1])
-			{
-					Drop_MAX_t[3][1]=adc2_buffer[1];
-					Drop_MAX_t[3][0]=i;
-			}
-
-			if(Drop_MAX_t[3][1]>Drop_MAX_t[2][1])
-			{
-					Drop_MAX_t[3][1]=Drop_MAX_t[2][1];
-					Drop_MAX_t[2][1]=adc2_buffer[1];
-					Drop_MAX_t[2][1]=adc2_buffer[1];
-					Drop_MAX_t[2][1]=i;
-			}
-
-			if(Drop_MAX_t[2][1]>Drop_MAX_t[1][1])
-			{
-					Drop_MAX_t[2][1]=Drop_MAX_t[1][1];
-					Drop_MAX_t[1][1]=adc2_buffer[1];
-					Drop_MAX_t[1][1]=adc2_buffer[1];
-					Drop_MAX_t[1][1]=i;
-			}
-
-			if(Drop_MAX_t[1][1]>Drop_MAX_t[0][1])
-			{
-					Drop_MAX_t[1][1]=Drop_MAX_t[0][1];
-					Drop_MAX_t[0][1]=adc2_buffer[1];
-					Drop_MAX_t[0][1]=adc2_buffer[1];
-					Drop_MAX_t[0][1]=i;
-			}
-			HAL_Delay(1);
-
+      for (uint8_t ch = 0; ch < ADC_CHANNELS; ch++)
+      {
+          adc_norm[a][ch] = gain[a][ch];
+      }
   }
-	  Through_MAX[1] = (Through_MAX_t[3][1]+Through_MAX_t[2][1]+Through_MAX_t[1][1]+Through_MAX_t[0][1])>>2;
-	  Drop_MAX[1] = (Drop_MAX_t[3][1]+Drop_MAX_t[2][1]+Drop_MAX_t[1][1]+Drop_MAX_t[0][1])>>2;
 
-	  Factor = Through_MAX[1]/Drop_MAX[1];
-
-	  printf("Initialization End\r\n");
-
-
-
+  Tune_IL_Gains(adc_norm,peak, &il_gain,IL);
+  il_ready = 1;
 
   while (1)
   {
@@ -304,37 +342,17 @@ int main(void)
 		while(LL_ADC_REG_IsConversionOngoing(ADC1)||LL_ADC_REG_IsConversionOngoing(ADC2))
 			{ }
 
-		for (uint16_t i = 0; i < 4; i++)
-		{
-				ADC1_CH0[i]=ADC1_CH0[i+1];
-				ADC1_CH1[i]=ADC1_CH1[i+1];
-				ADC2_CH0[i]=ADC2_CH0[i+1];
-				ADC2_CH1[i]=ADC2_CH1[i+1];
-		}
-		ADC1_CH0[3]=adc1_buffer[0];
-	    ADC1_CH1[3]=adc1_buffer[1];
-	    ADC2_CH0[3]=adc2_buffer[0];
-		ADC2_CH1[3]=adc2_buffer[1];
+		ADC1_CH0_filt = MovingAverage8_Update(&ADC1_CH0_Filter, adc1_buffer[0]*adc_norm[0][0]);
+		ADC1_CH1_filt = MovingAverage8_Update(&ADC1_CH1_Filter, adc1_buffer[1]*adc_norm[0][1]);
 
-		//ADC1_CH0_filt = ((ADC1_CH0[4]<<3)+(ADC1_CH0[3]<<2)+(ADC1_CH0[2]<<1)+ADC1_CH0[1]+ADC1_CH0[0])>>4;
-		//ADC1_CH1_filt = ((ADC1_CH1[4]<<3)+(ADC1_CH1[3]<<2)+(ADC1_CH1[2]<<1)+ADC1_CH1[1]+ADC1_CH1[0])>>4;
-		//ADC2_CH0_filt = ((ADC2_CH0[4]<<3)+(ADC2_CH0[3]<<2)+(ADC2_CH0[2]<<1)+ADC2_CH0[1]+ADC2_CH0[0])>>4;
-		//ADC2_CH1_filt = ((ADC2_CH1[4]<<3)+(ADC2_CH1[3]<<2)+(ADC2_CH1[2]<<1)+ADC2_CH1[1]+ADC2_CH1[0])>>4;
-
-		ADC1_CH0_filt = ((ADC1_CH0[3])+(ADC1_CH0[2])+(ADC1_CH0[1])+ADC1_CH0[1])>>2;
-		ADC1_CH1_filt = ((ADC1_CH1[3])+(ADC1_CH1[2])+(ADC1_CH1[1])+ADC1_CH1[1])>>2;
-		ADC2_CH0_filt = ((ADC2_CH0[3])+(ADC2_CH0[2])+(ADC2_CH0[1])+ADC2_CH0[1])>>2;
-		ADC2_CH1_filt = ((ADC2_CH1[3])+(ADC2_CH1[2])+(ADC2_CH1[1])+ADC2_CH1[1])>>2;
+		ADC2_CH0_filt = MovingAverage8_Update(&ADC2_CH0_Filter, adc2_buffer[0]*adc_norm[1][0]);
+		ADC2_CH1_filt = MovingAverage8_Update(&ADC2_CH1_Filter, adc2_buffer[1]*adc_norm[1][1]);
 
 
 
-
-
-
-		//calculation = (int16_t)adc2_buffer[1]-(int16_t)adc1_buffer[1];
-
-		calculation_MRR3 = ADC2_CH1_filt - (ADC1_CH1_filt>>0);
-		calculation_MRR4 = ADC2_CH0_filt - (ADC1_CH1_filt>>1);
+		calculation_MRR3 =(((int32_t)il_gain.G_T * (int32_t)ADC2_CH1_filt) -
+		    ((int32_t)il_gain.G_D * (int32_t)ADC1_CH1_filt))>>10;
+		//calculation_MRR4 = ADC2_CH0_filt - (ADC1_CH1_filt>>1);
 		//integral = integral + calculation;
 
 		//kp=1;
@@ -541,6 +559,241 @@ void SetDAC_1(int value)
   );
 
   HAL_DAC_Start(&hdac1, DAC_CHANNEL_1);
+}
+
+void MovingAverage8_Init(MovingAverage8_t *filt)
+{
+    filt->sum = 0;
+    filt->index = 0;
+
+    for(uint8_t i = 0; i < 8; i++)
+    {
+        filt->buffer[i] = 0;
+    }
+}
+
+uint16_t MovingAverage8_Update(MovingAverage8_t *filt, uint16_t sample)
+{
+    /* Remove oldest sample from sum */
+    filt->sum -= filt->buffer[filt->index];
+
+    /* Store new sample */
+    filt->buffer[filt->index] = sample;
+
+    /* Add new sample to sum */
+    filt->sum += sample;
+
+    /* Advance circular buffer index */
+    filt->index = (filt->index + 1) & 0x07;
+
+    /* Return average */
+    return (uint16_t)(filt->sum >> 3);
+}
+
+uint32_t TopN_Average(TopN_t *t)
+{
+    return (t->val[0] + t->val[1] + t->val[2] + t->val[3]) >> 2;
+}
+
+void TopN_Insert(TopN_t *t, uint16_t value, uint16_t pos)
+{
+    for (int i = 0; i < TOP_N; i++)
+    {
+        if (value > t->val[i])
+        {
+            for (int j = TOP_N - 1; j > i; j--)
+            {
+                t->val[j] = t->val[j - 1];
+                t->pos[j] = t->pos[j - 1];
+            }
+
+            t->val[i] = value;
+            t->pos[i] = pos;
+            return;
+        }
+    }
+}
+
+void Tune_IL_Gains(uint16_t adc_norm[2][2],TopN_t peak[2][2],  IL_Gain_t *g,uint16_t x_centi_dB)
+{
+	// Convert centi-dB to LUT index (5 centi-dB resolution)
+	uint16_t idx = x_centi_dB / 5;
+	uint32_t ratio = IL_LUT[idx];
+	uint16_t dac_value = 4095;
+	g -> G_T = 1024;
+	g -> G_D = 1024;
+	uint8_t Ongoing = 1;
+	uint16_t ADC1_CH0_filt = 0;
+	uint16_t ADC1_CH1_filt = 0;
+	uint16_t ADC2_CH0_filt = 0;
+	uint16_t ADC2_CH1_filt = 0;
+
+
+
+	uint32_t target = ratio*(uint32_t)peak[0][1].val*adc_norm[0][1];
+
+	for (uint16_t dac = dac_value; dac > 0; dac--)
+	    {
+	        SetDAC_2(dac);
+	        HAL_Delay(1);
+
+	while (Ongoing)
+	  {
+
+	  for (uint8_t i=0;i==7;i++)
+	  {
+		  if (LL_ADC_REG_IsConversionOngoing(ADC1)==0&&LL_ADC_REG_IsConversionOngoing(ADC2)==0)
+		{
+		LL_ADC_REG_StartConversion(ADC1);
+		LL_ADC_REG_StartConversion(ADC2);
+		while(LL_ADC_REG_IsConversionOngoing(ADC1)||LL_ADC_REG_IsConversionOngoing(ADC2))
+			{ }
+
+		ADC1_CH0_filt = MovingAverage8_Update(&ADC1_CH0_Filter, adc1_buffer[0]*adc_norm[0][0]);
+		ADC1_CH1_filt = MovingAverage8_Update(&ADC1_CH1_Filter, adc1_buffer[1]*adc_norm[0][1]);
+
+		ADC2_CH0_filt = MovingAverage8_Update(&ADC2_CH0_Filter, adc2_buffer[0]*adc_norm[1][0]);
+		ADC2_CH1_filt = MovingAverage8_Update(&ADC2_CH1_Filter, adc2_buffer[1]*adc_norm[1][1]);}
+	  }
+
+	  if (ADC1_CH1_filt-target<10)
+		  Ongoing=0;
+	  }
+	dac_value = dac;
+	  }
+	SetDAC_2(dac_value);
+	Ongoing =1;
+	int32_t calc=0;
+	while (Ongoing)
+		  {
+			  if (LL_ADC_REG_IsConversionOngoing(ADC1)==0&&LL_ADC_REG_IsConversionOngoing(ADC2)==0)
+			{
+			LL_ADC_REG_StartConversion(ADC1);
+			LL_ADC_REG_StartConversion(ADC2);
+			while(LL_ADC_REG_IsConversionOngoing(ADC1)||LL_ADC_REG_IsConversionOngoing(ADC2))
+				{ }
+
+			ADC1_CH0_filt = MovingAverage8_Update(&ADC1_CH0_Filter, adc1_buffer[0]*adc_norm[0][0]);
+			ADC1_CH1_filt = MovingAverage8_Update(&ADC1_CH1_Filter, adc1_buffer[1]*adc_norm[0][1]);
+
+			ADC2_CH0_filt = MovingAverage8_Update(&ADC2_CH0_Filter, adc2_buffer[0]*adc_norm[1][0]);
+			ADC2_CH1_filt = MovingAverage8_Update(&ADC2_CH1_Filter, adc2_buffer[1]*adc_norm[1][1]);
+			}
+
+			calc = ADC1_CH1_filt-ADC2_CH1_filt;
+
+			if (calc>0)
+				{g -> G_D -=1;}
+
+			else if (calc<0)
+				{g -> G_D +=1;}
+
+			else
+				{Ongoing=0;}
+		  }
+
+			printf("Gain T : %lu, Gain D: %lu",g->G_T,g->G_D);
+			HAL_Delay(500);
+
+
+
+}
+
+static inline uint16_t IL_LUT_Get(uint16_t il_centi_db)
+{
+    uint16_t idx = il_centi_db / 5;
+
+    if (idx >= IL_LUT_SIZE - 1)
+        idx = IL_LUT_SIZE - 1;
+
+    return IL_LUT[idx];
+
+}
+
+void Calibration_Run(volatile uint16_t *adc1_buffer,
+                     volatile uint16_t *adc2_buffer)
+{
+    printf("Calibration Begin\r\n");
+
+    /* reset */
+    for (uint8_t a = 0; a < ADC_INSTANCES; a++)
+    {
+        for (uint8_t ch = 0; ch < ADC_CHANNELS; ch++)
+        {
+            for (uint8_t i = 0; i < TOP_N; i++)
+            {
+                peak[a][ch].val[i] = 0;
+                peak[a][ch].pos[i] = 0;
+            }
+        }
+    }
+
+    for (uint16_t dac = 0; dac < 4095; dac++)
+    {
+        SetDAC_2(dac);
+
+        LL_ADC_REG_StartConversion(ADC1);
+        LL_ADC_REG_StartConversion(ADC2);
+
+        while (LL_ADC_REG_IsConversionOngoing(ADC1) ||
+               LL_ADC_REG_IsConversionOngoing(ADC2))
+        {
+        }
+
+        uint16_t adc[ADC_INSTANCES][ADC_CHANNELS];
+
+        adc[0][0] = adc1_buffer[0];
+        adc[0][1] = adc1_buffer[1];
+
+        adc[1][0] = adc2_buffer[0];
+        adc[1][1] = adc2_buffer[1];
+
+        for (uint8_t a = 0; a < ADC_INSTANCES; a++)
+        {
+            for (uint8_t ch = 0; ch < ADC_CHANNELS; ch++)
+            {
+                TopN_Insert(&peak[a][ch], adc[a][ch], dac);
+            }
+        }
+
+        HAL_Delay(1);
+    }
+
+    /* compute averages */
+    for (uint8_t a = 0; a < ADC_INSTANCES; a++)
+    {
+        for (uint8_t ch = 0; ch < ADC_CHANNELS; ch++)
+        {
+            avg_peak[a][ch] =
+                (peak[a][ch].val[0] +
+                 peak[a][ch].val[1] +
+                 peak[a][ch].val[2] +
+                 peak[a][ch].val[3]) >> 2;
+        }
+    }
+
+    /* find global reference */
+    uint32_t ref = 0;
+
+    for (uint8_t a = 0; a < ADC_INSTANCES; a++)
+    {
+        for (uint8_t ch = 0; ch < ADC_CHANNELS; ch++)
+        {
+            if (avg_peak[a][ch] > ref)
+                ref = avg_peak[a][ch];
+        }
+    }
+
+    /* compute gains */
+    for (uint8_t a = 0; a < ADC_INSTANCES; a++)
+    {
+        for (uint8_t ch = 0; ch < ADC_CHANNELS; ch++)
+        {
+            gain[a][ch] = ((uint32_t)ref << 10) / avg_peak[a][ch];
+        }
+    }
+
+    printf("Calibration End\r\n");
 }
 
 void SetPWM(TIM_HandleTypeDef *htim, uint32_t channel, int percent)
