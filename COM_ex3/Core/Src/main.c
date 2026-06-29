@@ -114,6 +114,7 @@ int16_t ki;
 int16_t integral;
 IL_Gain_t il_gain;
 uint8_t il_ready = 0;
+volatile uint8_t h =0;
 
 const uint16_t IL_LUT[IL_LUT_SIZE] = {
     65535, 64785, 64043, 63310, 62585, 61869, 61161, 60461,
@@ -256,6 +257,7 @@ int main(void)
   kp = 0;
   ki = 0;
   integral =0;
+  h=0;
 
   /* USER CODE END SysInit */
 
@@ -329,6 +331,7 @@ int main(void)
           adc_norm[a][ch] = gain[a][ch];
       }
   }
+  printf("BEFORE IL GAINS \r\n");
 
   Tune_IL_Gains(adc_norm,peak, &il_gain,IL);
   il_ready = 1;
@@ -616,6 +619,7 @@ void TopN_Insert(TopN_t *t, uint16_t value, uint16_t pos)
 
 void Tune_IL_Gains(uint16_t adc_norm[2][2],TopN_t peak[2][2],  IL_Gain_t *g,uint16_t x_centi_dB)
 {
+	printf("TUNING IL GAIN\r\n");
 	// Convert centi-dB to LUT index (5 centi-dB resolution)
 	uint16_t idx = x_centi_dB / 5;
 	uint32_t ratio = IL_LUT[idx];
@@ -640,10 +644,9 @@ void Tune_IL_Gains(uint16_t adc_norm[2][2],TopN_t peak[2][2],  IL_Gain_t *g,uint
 	while (Ongoing)
 	  {
 
-	  for (uint8_t i=0;i==7;i++)
+	  while (h<8)
 	  {
-		  if (LL_ADC_REG_IsConversionOngoing(ADC1)==0&&LL_ADC_REG_IsConversionOngoing(ADC2)==0)
-		{
+		printf("%u\r\n",h);
 		LL_ADC_REG_StartConversion(ADC1);
 		LL_ADC_REG_StartConversion(ADC2);
 		while(LL_ADC_REG_IsConversionOngoing(ADC1)||LL_ADC_REG_IsConversionOngoing(ADC2))
@@ -653,14 +656,17 @@ void Tune_IL_Gains(uint16_t adc_norm[2][2],TopN_t peak[2][2],  IL_Gain_t *g,uint
 		ADC1_CH1_filt = MovingAverage8_Update(&ADC1_CH1_Filter, adc1_buffer[1]*adc_norm[0][1]);
 
 		ADC2_CH0_filt = MovingAverage8_Update(&ADC2_CH0_Filter, adc2_buffer[0]*adc_norm[1][0]);
-		ADC2_CH1_filt = MovingAverage8_Update(&ADC2_CH1_Filter, adc2_buffer[1]*adc_norm[1][1]);}
+		ADC2_CH1_filt = MovingAverage8_Update(&ADC2_CH1_Filter, adc2_buffer[1]*adc_norm[1][1]);
+		h++;
 	  }
 
 	  if (ADC1_CH1_filt-target<10)
 		  Ongoing=0;
+	  	  h =0;
 	  }
 	dac_value = dac;
 	  }
+	printf("DAC VALUE FOUND\r\n");
 	SetDAC_2(dac_value);
 	Ongoing =1;
 	int32_t calc=0;
