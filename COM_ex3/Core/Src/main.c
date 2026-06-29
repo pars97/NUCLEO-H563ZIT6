@@ -634,7 +634,8 @@ void Tune_IL_Gains(uint16_t adc_norm[2][2],TopN_t peak[2][2],  IL_Gain_t *g,uint
 
 
 
-	uint32_t target = ratio*(uint32_t)peak[0][1].val*adc_norm[0][1];
+	uint32_t target = ((ratio*adc_norm[0][1]>>10)*(uint32_t)peak[0][1].val)>>16;
+	// Target is ratio(<<16)*adc_norm(<<10)>>10.
 
 	for (uint16_t dac = dac_value; dac > 0; dac--)
 	    {
