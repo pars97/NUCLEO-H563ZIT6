@@ -395,14 +395,14 @@ int main(void)
 
 		SetDAC_2(DAC_Value_MRR3);
 		//SetDAC_1(DAC_Value_MRR4);
-		HAL_Delay(5);
+		//HAL_Delay(5);
 		}
 
 
 
 
 
-    if (HAL_GetTick() - printTick > 10)
+    if (HAL_GetTick() - printTick > 3)
 	{
 	printf("ADC1=%u %u | ADC2=%u %u\r\n",ADC1_CH0_filt,ADC1_CH1_filt,ADC2_CH0_filt,ADC2_CH1_filt);
 	printf("DAC=%u \r\n",DAC_Value_MRR3);
