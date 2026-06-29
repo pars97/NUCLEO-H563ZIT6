@@ -48,7 +48,7 @@ app = QtWidgets.QApplication([])
 win = pg.GraphicsLayoutWidget(show=True, title="STM32 ADC Oscilloscope")
 win.resize(1000, 600) 
 plot = win.addPlot(title="ADC Streaming") 
-plot.setYRange(0, 4096) 
+plot.setYRange(0, 2**16) 
 plot.setXRange(0, N) 
 plot.addLegend() 
 

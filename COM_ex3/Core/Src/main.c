@@ -75,7 +75,7 @@ uint32_t gain[ADC_INSTANCES][ADC_CHANNELS];
 
 typedef struct
 {
-    uint16_t buffer[8];
+    uint32_t buffer[8];
     uint32_t sum;
     uint8_t index;
 } MovingAverage8_t;
@@ -186,7 +186,7 @@ void SetDAC_2(int value);
 void SetPWM(TIM_HandleTypeDef *htim, uint32_t channel, int percent);
 
 void MovingAverage8_Init(MovingAverage8_t *filt);
-uint16_t MovingAverage8_Update(MovingAverage8_t *filt, uint16_t sample);
+uint32_t MovingAverage8_Update(MovingAverage8_t *filt, uint32_t sample);
 void TopN_Insert(TopN_t *t, uint16_t value, uint16_t pos);
 uint32_t TopN_Average(TopN_t *t);
 void Calibration_Run(volatile uint16_t *adc1_buffer,volatile uint16_t *adc2_buffer);
@@ -575,7 +575,7 @@ void MovingAverage8_Init(MovingAverage8_t *filt)
     }
 }
 
-uint16_t MovingAverage8_Update(MovingAverage8_t *filt, uint16_t sample)
+uint32_t MovingAverage8_Update(MovingAverage8_t *filt, uint32_t sample)
 {
     /* Remove oldest sample from sum */
     filt->sum -= filt->buffer[filt->index];
@@ -590,7 +590,7 @@ uint16_t MovingAverage8_Update(MovingAverage8_t *filt, uint16_t sample)
     filt->index = (filt->index + 1) & 0x07;
 
     /* Return average */
-    return (uint16_t)(filt->sum >> 3);
+    return (uint32_t)(filt->sum >> 3);
 }
 
 uint32_t TopN_Average(TopN_t *t)
@@ -627,20 +627,20 @@ void Tune_IL_Gains(uint16_t adc_norm[2][2],TopN_t peak[2][2],  IL_Gain_t *g,uint
 	g -> G_T = 1024;
 	g -> G_D = 1024;
 	uint8_t Ongoing = 1;
-	uint16_t ADC1_CH0_filt = 0;
-	uint16_t ADC1_CH1_filt = 0;
-	uint16_t ADC2_CH0_filt = 0;
-	uint16_t ADC2_CH1_filt = 0;
+	uint32_t ADC1_CH0_filt = 0;
+	uint32_t ADC1_CH1_filt = 0;
+	uint32_t ADC2_CH0_filt = 0;
+	uint32_t ADC2_CH1_filt = 0;
+	uint16_t dac = dac_value;
 
 
-
-	uint32_t target = ((ratio*adc_norm[0][1]>>16)*(uint32_t)avg_peak[0][1]);
+	uint32_t target = ((ratio*adc_norm[0][1]>>16))*(uint32_t)avg_peak[0][1];
 	// Target is ratio(<<16)*adc_norm(<<10.
 
-	for (uint16_t dac = dac_value; dac > 0; dac--)
+	while (Ongoing)
 	{
 	SetDAC_2(dac);
-	HAL_Delay(1);
+	HAL_Delay(10);
 	printf("%u\r\n",dac);
 		  while (h<8)
 		  {
@@ -648,27 +648,29 @@ void Tune_IL_Gains(uint16_t adc_norm[2][2],TopN_t peak[2][2],  IL_Gain_t *g,uint
 			LL_ADC_REG_StartConversion(ADC2);
 				while(LL_ADC_REG_IsConversionOngoing(ADC1)||LL_ADC_REG_IsConversionOngoing(ADC2))
 				{ }
-			//ADC1_CH0_filt = MovingAverage8_Update(&ADC1_CH0_Filter, adc1_buffer[0]*adc_norm[0][0]);
-			//ADC1_CH1_filt = MovingAverage8_Update(&ADC1_CH1_Filter, adc1_buffer[1]*adc_norm[0][1]);
+			ADC1_CH0_filt = MovingAverage8_Update(&ADC1_CH0_Filter, adc1_buffer[0]*adc_norm[0][0]);
+			ADC1_CH1_filt = MovingAverage8_Update(&ADC1_CH1_Filter, adc1_buffer[1]*adc_norm[0][1]);
 
-			//ADC2_CH0_filt = MovingAverage8_Update(&ADC2_CH0_Filter, adc2_buffer[0]*adc_norm[1][0]);
-			//ADC2_CH1_filt = MovingAverage8_Update(&ADC2_CH1_Filter, adc2_buffer[1]*adc_norm[1][1]);
-				ADC1_CH1_filt = adc1_buffer[1]*adc_norm[0][1];
+			ADC2_CH0_filt = MovingAverage8_Update(&ADC2_CH0_Filter, adc2_buffer[0]*adc_norm[1][0]);
+			ADC2_CH1_filt = MovingAverage8_Update(&ADC2_CH1_Filter, adc2_buffer[1]*adc_norm[1][1]);
+
 				h++;
 		  }
 	  printf("ADC1_CH1_filt %lu\r\n",ADC1_CH1_filt);
-
-	  if ((target-ADC1_CH1_filt)<10)
-	  {
-	  	  dac_value = dac;
-	  	  printf("A VALUE!\r\n");
-	  }
 	  	  h =0;
+	  	  dac--;
+
+	  	if (((ADC1_CH1_filt-target)>>31)==1)
+	  		  {
+	  		  	  dac_value = dac;
+	  		  	  printf("A VALUE! %u\r\n",dac);
+	  		  	  Ongoing =0;
+	  		  }
 	  }
 	printf("DAC VALUE FOUND: %u\r\n",dac_value);
 	SetDAC_2(dac_value);
 	Ongoing =1;
-	int32_t calc=0;
+	/*int32_t calc=0;
 	while (Ongoing)
 		  {
 			  if (LL_ADC_REG_IsConversionOngoing(ADC1)==0&&LL_ADC_REG_IsConversionOngoing(ADC2)==0)
@@ -698,7 +700,7 @@ void Tune_IL_Gains(uint16_t adc_norm[2][2],TopN_t peak[2][2],  IL_Gain_t *g,uint
 		  }
 
 			printf("Gain T : %lu, Gain D: %lu",g->G_T,g->G_D);
-			HAL_Delay(500);
+			HAL_Delay(500);*/
 
 
 
