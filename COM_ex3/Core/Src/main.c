@@ -335,6 +335,7 @@ int main(void)
 
   Tune_IL_Gains(adc_norm,peak, &il_gain,IL);
   il_ready = 1;
+  //SetDAC_2(3520);
 
   while (1)
   {
@@ -346,15 +347,14 @@ int main(void)
 			{ }
 
 		ADC1_CH0_filt = MovingAverage8_Update(&ADC1_CH0_Filter, (adc1_buffer[0]*adc_norm[0][0]));
-		ADC1_CH1_filt = MovingAverage8_Update(&ADC1_CH1_Filter, (adc1_buffer[1]*adc_norm[0][1]));
+		ADC1_CH1_filt = MovingAverage8_Update(&ADC1_CH1_Filter, (adc1_buffer[1]*adc_norm[0][1]*il_gain.G_T)>>10);
 
 		ADC2_CH0_filt = MovingAverage8_Update(&ADC2_CH0_Filter, (adc2_buffer[0]*adc_norm[1][0]));
-		ADC2_CH1_filt = MovingAverage8_Update(&ADC2_CH1_Filter, (adc2_buffer[1]*adc_norm[1][1]));
+		ADC2_CH1_filt = MovingAverage8_Update(&ADC2_CH1_Filter, (adc2_buffer[1]*adc_norm[1][1]*il_gain.G_D)>>10);
 
 
 
-		calculation_MRR3 =(((int32_t)il_gain.G_T * (int32_t)ADC2_CH1_filt) -
-		    ((int32_t)il_gain.G_D * (int32_t)ADC1_CH1_filt))>>10;
+		calculation_MRR3 =ADC2_CH1_filt-ADC1_CH1_filt;
 		//calculation_MRR4 = ADC2_CH0_filt - (ADC1_CH1_filt>>1);
 		//integral = integral + calculation;
 
@@ -425,7 +425,7 @@ int main(void)
 
     if (HAL_GetTick() - printTick > 10)
 	{
-	printf("ADC1=%u %u | ADC2=%u %u\r\n",ADC1_CH0_filt,ADC1_CH1_filt,ADC2_CH0_filt,ADC2_CH1_filt);
+	printf("ADC1=%u %u | ADC2=%u %u\r\n",adc1_buffer[0],adc1_buffer[1],adc2_buffer[0],adc2_buffer[1]);
 	printf("DAC=%u \r\n",DAC_Value_MRR3);
 	//printf("DAC=%u %u \r\n",DAC_Value_MRR3, DAC_Value_MRR4);
 	printTick = HAL_GetTick();
@@ -670,7 +670,7 @@ void Tune_IL_Gains(uint16_t adc_norm[2][2],TopN_t peak[2][2],  IL_Gain_t *g,uint
 	printf("DAC VALUE FOUND: %u\r\n",dac_value);
 	SetDAC_2(dac_value);
 	Ongoing =1;
-	/*int32_t calc=0;
+	int32_t calc=0;
 	while (Ongoing)
 		  {
 			  if (LL_ADC_REG_IsConversionOngoing(ADC1)==0&&LL_ADC_REG_IsConversionOngoing(ADC2)==0)
@@ -681,13 +681,13 @@ void Tune_IL_Gains(uint16_t adc_norm[2][2],TopN_t peak[2][2],  IL_Gain_t *g,uint
 				{ }
 
 			ADC1_CH0_filt = MovingAverage8_Update(&ADC1_CH0_Filter, adc1_buffer[0]*adc_norm[0][0]);
-			ADC1_CH1_filt = MovingAverage8_Update(&ADC1_CH1_Filter, adc1_buffer[1]*adc_norm[0][1]);
+			ADC1_CH1_filt = MovingAverage8_Update(&ADC1_CH1_Filter, (adc1_buffer[1]*adc_norm[0][1]*g->G_T)>>10);
 
 			ADC2_CH0_filt = MovingAverage8_Update(&ADC2_CH0_Filter, adc2_buffer[0]*adc_norm[1][0]);
-			ADC2_CH1_filt = MovingAverage8_Update(&ADC2_CH1_Filter, adc2_buffer[1]*adc_norm[1][1]);
+			ADC2_CH1_filt = MovingAverage8_Update(&ADC2_CH1_Filter, (adc2_buffer[1]*adc_norm[1][1]*g->G_D)>>10);
 			}
 
-			calc = ADC1_CH1_filt-ADC2_CH1_filt;
+			calc = ADC2_CH1_filt-ADC1_CH1_filt;
 
 			if (calc>0)
 				{g -> G_D -=1;}
@@ -700,7 +700,7 @@ void Tune_IL_Gains(uint16_t adc_norm[2][2],TopN_t peak[2][2],  IL_Gain_t *g,uint
 		  }
 
 			printf("Gain T : %lu, Gain D: %lu",g->G_T,g->G_D);
-			HAL_Delay(500);*/
+			HAL_Delay(500);
 
 
 
