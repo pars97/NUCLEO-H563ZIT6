@@ -190,7 +190,7 @@ uint32_t MovingAverage8_Update(MovingAverage8_t *filt, uint32_t sample);
 void TopN_Insert(TopN_t *t, uint16_t value, uint16_t pos);
 uint32_t TopN_Average(TopN_t *t);
 void Calibration_Run(volatile uint16_t *adc1_buffer,volatile uint16_t *adc2_buffer);
-void Tune_IL_Gains(uint16_t adc_norm[2][2],TopN_t peak[2][2],IL_Gain_t *g,uint16_t x_centi_dB);
+uint16_t Tune_IL_Gains(uint16_t adc_norm[2][2],TopN_t peak[2][2],IL_Gain_t *g,uint16_t x_centi_dB);
 static inline uint16_t IL_LUT_Get(uint16_t il_centi_db);
 
 
@@ -240,7 +240,7 @@ int main(void)
   MovingAverage8_Init(&ADC2_CH1_Filter);
 
   static uint32_t printTick = 0;
-  int16_t calculation_MRR3 = 0;
+  int32_t calculation_MRR3 = 0;
   //int16_t calculation_MRR4 = 0;
   static uint16_t DAC_Value_MRR3 = 4095;
  // static uint16_t DAC_Value_MRR4 = 4095;
@@ -248,10 +248,12 @@ int main(void)
   memset(ADC1_CH1, 0, sizeof(ADC1_CH1));
   memset(ADC2_CH0, 0, sizeof(ADC2_CH0));
   memset(ADC2_CH1, 0, sizeof(ADC2_CH1));
-  uint16_t ADC1_CH0_filt = 0;
-  uint16_t ADC1_CH1_filt = 0;
-  uint16_t ADC2_CH0_filt = 0;
-  uint16_t ADC2_CH1_filt = 0;
+  uint32_t ADC1_CH0_filt = 0;
+  uint32_t ADC1_CH1_filt = 0;
+  uint32_t ADC2_CH0_filt = 0;
+  uint32_t ADC2_CH1_filt = 0;
+  uint16_t dac_value = 0;
+  uint16_t calculate =0;
   //uint16_t db_IL=0;
 
   kp = 0;
@@ -319,8 +321,8 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   //static uint32_t lastTick = 0;
 
-// SET THE INSERTION LOSS, 300 means 3db, 452 means 4.52 db loss
-  IL = 325;
+// SET THE INSERTION LOSS, 300 means 3db, 455 means 4.55 db loss
+  IL = 300;
 
   Calibration_Run(adc1_buffer, adc2_buffer);
 
@@ -333,12 +335,15 @@ int main(void)
   }
   printf("BEFORE IL GAINS \r\n");
 
-  Tune_IL_Gains(adc_norm,peak, &il_gain,IL);
+  dac_value = Tune_IL_Gains(adc_norm,peak, &il_gain,IL);
   il_ready = 1;
-  //SetDAC_2(3520);
+  DAC_Value_MRR3 = dac_value;
+  HAL_Delay(500);
 
   while (1)
   {
+	  while(calculate<3)
+	  {
 		if (LL_ADC_REG_IsConversionOngoing(ADC1)==0&&LL_ADC_REG_IsConversionOngoing(ADC2)==0)
 		{
 		LL_ADC_REG_StartConversion(ADC1);
@@ -346,15 +351,21 @@ int main(void)
 		while(LL_ADC_REG_IsConversionOngoing(ADC1)||LL_ADC_REG_IsConversionOngoing(ADC2))
 			{ }
 
-		ADC1_CH0_filt = MovingAverage8_Update(&ADC1_CH0_Filter, (adc1_buffer[0]*adc_norm[0][0]));
-		ADC1_CH1_filt = MovingAverage8_Update(&ADC1_CH1_Filter, (adc1_buffer[1]*adc_norm[0][1]*il_gain.G_T)>>10);
+		//ADC1_CH0_filt = MovingAverage8_Update(&ADC1_CH0_Filter, (adc1_buffer[0]*adc_norm[0][0]));
+		//ADC1_CH1_filt = MovingAverage8_Update(&ADC1_CH1_Filter, (adc1_buffer[1]*(adc_norm[0][1]*il_gain.G_T)>>10));
 
-		ADC2_CH0_filt = MovingAverage8_Update(&ADC2_CH0_Filter, (adc2_buffer[0]*adc_norm[1][0]));
-		ADC2_CH1_filt = MovingAverage8_Update(&ADC2_CH1_Filter, (adc2_buffer[1]*adc_norm[1][1]*il_gain.G_D)>>10);
+		//ADC2_CH0_filt = MovingAverage8_Update(&ADC2_CH0_Filter, (adc2_buffer[0]*adc_norm[1][0]));
+		//ADC2_CH1_filt = MovingAverage8_Update(&ADC2_CH1_Filter, (adc2_buffer[1]*(adc_norm[1][1]*il_gain.G_D)>>10));
+		ADC1_CH1_filt = adc1_buffer[1]*(adc_norm[0][1]*il_gain.G_T)>>16;
+		ADC2_CH1_filt = adc2_buffer[1]*(adc_norm[1][1]*il_gain.G_D)>>16;
 
 
-
-		calculation_MRR3 =ADC2_CH1_filt-ADC1_CH1_filt;
+		calculation_MRR3 += ADC2_CH1_filt-ADC1_CH1_filt;
+		calculate++;
+		HAL_Delay(5);
+		}
+	  }
+		calculation_MRR3 = calculation_MRR3>>2;
 		//calculation_MRR4 = ADC2_CH0_filt - (ADC1_CH1_filt>>1);
 		//integral = integral + calculation;
 
@@ -390,6 +401,10 @@ int main(void)
 		else
 			DAC_Value_MRR3 = DAC_Value_MRR3;
 
+		calculation_MRR3 =0;
+		calculate =0;
+//printf("Calculation ; %u\r\n", calculation_MRR3);
+
 		/*if (calculation_MRR4 >0)
 				{
 					if (DAC_Value_MRR4<4095)
@@ -416,8 +431,8 @@ int main(void)
 
 		SetDAC_2(DAC_Value_MRR3);
 		//SetDAC_1(DAC_Value_MRR4);
-		HAL_Delay(5);
-		}
+
+
 
 
 
@@ -429,7 +444,7 @@ int main(void)
 	printf("DAC=%u \r\n",DAC_Value_MRR3);
 	//printf("DAC=%u %u \r\n",DAC_Value_MRR3, DAC_Value_MRR4);
 	printTick = HAL_GetTick();
-	}
+	}}
 
 //TIA1 = adc1_buffer[0] * 4;
 
@@ -438,7 +453,7 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
   /* USER CODE END 3 */
-}
+
 
 /**
   * @brief System Clock Configuration
@@ -617,15 +632,15 @@ void TopN_Insert(TopN_t *t, uint16_t value, uint16_t pos)
     }
 }
 
-void Tune_IL_Gains(uint16_t adc_norm[2][2],TopN_t peak[2][2],  IL_Gain_t *g,uint16_t x_centi_dB)
+uint16_t Tune_IL_Gains(uint16_t adc_norm[2][2],TopN_t peak[2][2],  IL_Gain_t *g,uint16_t x_centi_dB)
 {
 	printf("TUNING IL GAIN\r\n");
 	// Convert centi-dB to LUT index (5 centi-dB resolution)
 	uint16_t idx = x_centi_dB / 5;
 	uint32_t ratio = IL_LUT[idx];
-	uint16_t dac_value = 4095;
-	g -> G_T = 1024;
-	g -> G_D = 1024;
+	uint16_t dac_value = 3100;
+	g -> G_T = 16384;
+	g -> G_D = 16384;
 	uint8_t Ongoing = 1;
 	uint32_t ADC1_CH0_filt = 0;
 	uint32_t ADC1_CH1_filt = 0;
@@ -681,27 +696,28 @@ void Tune_IL_Gains(uint16_t adc_norm[2][2],TopN_t peak[2][2],  IL_Gain_t *g,uint
 				{ }
 
 			ADC1_CH0_filt = MovingAverage8_Update(&ADC1_CH0_Filter, adc1_buffer[0]*adc_norm[0][0]);
-			ADC1_CH1_filt = MovingAverage8_Update(&ADC1_CH1_Filter, (adc1_buffer[1]*adc_norm[0][1]*g->G_T)>>10);
+			ADC1_CH1_filt = MovingAverage8_Update(&ADC1_CH1_Filter, (adc1_buffer[1]*(adc_norm[0][1]*g->G_T)>>16));
 
 			ADC2_CH0_filt = MovingAverage8_Update(&ADC2_CH0_Filter, adc2_buffer[0]*adc_norm[1][0]);
-			ADC2_CH1_filt = MovingAverage8_Update(&ADC2_CH1_Filter, (adc2_buffer[1]*adc_norm[1][1]*g->G_D)>>10);
+			ADC2_CH1_filt = MovingAverage8_Update(&ADC2_CH1_Filter, (adc2_buffer[1]*(adc_norm[1][1]*g->G_D)>>16));
+			printf("ADC1=%u %u | ADC2=%u %u\r\n",adc1_buffer[0],adc1_buffer[1],adc2_buffer[0],adc2_buffer[1]);
+
 			}
 
 			calc = ADC2_CH1_filt-ADC1_CH1_filt;
 
 			if (calc>0)
-				{g -> G_D -=1;}
-
-			else if (calc<0)
-				{g -> G_D +=1;}
+				{g -> G_D -=1;
+			printf("G_D = %u\r\n",g->G_D);
+			HAL_Delay(10);}
 
 			else
-				{Ongoing=0;}
-		  }
+			Ongoing=0;
+		  	  }
 
-			printf("Gain T : %lu, Gain D: %lu",g->G_T,g->G_D);
+			printf("Gain T : %lu, Gain D: %lu\r\n",g->G_T,g->G_D);
 			HAL_Delay(500);
-
+			return(dac_value);
 
 
 }
@@ -801,6 +817,7 @@ void Calibration_Run(volatile uint16_t *adc1_buffer,
     }
 
     printf("Calibration End\r\n");
+    printf("MAXIMUM: %lu\r\n",ref);
 }
 
 void SetPWM(TIM_HandleTypeDef *htim, uint32_t channel, int percent)
