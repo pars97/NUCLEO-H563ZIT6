@@ -399,7 +399,7 @@ int main(void)
 			}
 		}
 		else
-			DAC_Value_MRR3 = DAC_Value_MRR3;
+			//DAC_Value_MRR3 = DAC_Value_MRR3;
 
 		calculation_MRR3 =0;
 		calculate =0;
