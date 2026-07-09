@@ -716,6 +716,11 @@ uint16_t Tune_IL_Gains(uint16_t adc_norm[2][2],TopN_t peak[2][2],  IL_Gain_t *g,
 			printf("G_D = %u\r\n",g->G_D);
 			HAL_Delay(1);}
 
+			else if (calc<0)
+			{g -> G_D +=1;
+			printf("G_D = %u\r\n",g->G_D);
+			HAL_Delay(1);}
+
 			else
 			Ongoing=0;
 		  	  }
