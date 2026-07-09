@@ -371,6 +371,9 @@ int main(void)
 		}
 	  }
 		calculation_MRR3 = calculation_MRR3>>2;
+
+		Current_IL = (avg_peak[0][1]<<16)/adc1_buffer[1];
+
 		//calculation_MRR4 = ADC2_CH0_filt - (ADC1_CH1_filt>>1);
 		//integral = integral + calculation;
 
@@ -420,11 +423,11 @@ int main(void)
 		           ADC2_CH0_filt,
 		           ADC2_CH1_filt,
 		           DAC_Value_MRR3,
-		           IL);
+				   Current_IL);
 
 		    printf("DAC=%u IL = %u\r\n",
 		           DAC_Value_MRR3,
-		           IL);
+				   Current_IL);
 
 		    printTick = HAL_GetTick();
 		}
@@ -433,6 +436,8 @@ int main(void)
 //TIA1 = adc1_buffer[0] * 4;
 
   }
+
+}
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
