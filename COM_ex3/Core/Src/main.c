@@ -109,8 +109,10 @@ MovingAverage8_t ADC2_CH1_Filter;
 
 uint16_t Factor;
 uint16_t IL;
+uint16_t Current_IL;
 int16_t kp;
 int16_t ki;
+int16_t kd;
 int16_t integral;
 IL_Gain_t il_gain;
 uint8_t il_ready = 0;
@@ -258,6 +260,9 @@ int main(void)
 
   kp = 0;
   ki = 0;
+  kd =0;
+  IL = 0;
+  Current_IL= 0;
   integral =0;
   h=0;
 
@@ -388,7 +393,7 @@ int main(void)
 			}
 		}
 
-		else if (calculation_MRR3 <0)
+		if (calculation_MRR3 <0)
 		{
 			if (DAC_Value_MRR3>0)
 				DAC_Value_MRR3 = DAC_Value_MRR3 -1;
@@ -398,53 +403,32 @@ int main(void)
 			HAL_Delay(100);
 			}
 		}
-		else
-			//DAC_Value_MRR3 = DAC_Value_MRR3;
 
 		calculation_MRR3 =0;
 		calculate =0;
-//printf("Calculation ; %u\r\n", calculation_MRR3);
 
-		/*if (calculation_MRR4 >0)
-				{
-					if (DAC_Value_MRR4<4095)
-						DAC_Value_MRR4 = DAC_Value_MRR4 +1;
-					else
-					{
-						DAC_Value_MRR4 = 50;
-					HAL_Delay(100);
-					}
-				}
-
-				else if (calculation_MRR4 <0)
-				{
-					if (DAC_Value_MRR4>0)
-						DAC_Value_MRR4 = DAC_Value_MRR4 -1;
-					else
-					{
-						DAC_Value_MRR4 = 4000;
-					HAL_Delay(100);
-					}
-				}
-				else
-					DAC_Value_MRR4 = DAC_Value_MRR4;*/
 
 		SetDAC_2(DAC_Value_MRR3);
 		//SetDAC_1(DAC_Value_MRR4);
 
 
+		if (HAL_GetTick() - printTick > 10)
+		{
+		    printf("ADC1=%lu %lu | ADC2=%lu %lu | DAC=%u IL=%u\r\n",
+		           ADC1_CH0_filt,
+		           ADC1_CH1_filt,
+		           ADC2_CH0_filt,
+		           ADC2_CH1_filt,
+		           DAC_Value_MRR3,
+		           IL);
 
+		    printf("DAC=%u IL = %u\r\n",
+		           DAC_Value_MRR3,
+		           IL);
 
+		    printTick = HAL_GetTick();
+		}
 
-
-
-    if (HAL_GetTick() - printTick > 10)
-	{
-	printf("ADC1=%u %u | ADC2=%u %u\r\n",adc1_buffer[0],adc1_buffer[1],adc2_buffer[0],adc2_buffer[1]);
-	printf("DAC=%u \r\n",DAC_Value_MRR3);
-	//printf("DAC=%u %u \r\n",DAC_Value_MRR3, DAC_Value_MRR4);
-	printTick = HAL_GetTick();
-	}}
 
 //TIA1 = adc1_buffer[0] * 4;
 
