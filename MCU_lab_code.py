@@ -7,7 +7,7 @@ import re
 import numpy as np
 # ---------------- CONFIG ---------------- 
 PORT = "COM3" 
-BAUDRATE = 115200 
+BAUDRATE = 921600 #921600 
 N = 1000 # more points = smoother trace 
 ser = serial.Serial(PORT, BAUDRATE, timeout=0.1)
  # ---------------- DATA BUFFERS ---------------- 
@@ -20,6 +20,7 @@ il = deque(maxlen=N)
 buffer = deque(maxlen=2000) 
 il_max = None
 il_min = None
+il_hist = deque(maxlen=100000)
 lock = threading.Lock() 
 # ---------------- SERIAL THREAD ---------------- 
 def read_serial(): 
@@ -55,13 +56,15 @@ def send_uart():
         input_box.clear()
 #------------------------
 def reset_il_extrema():
-    global il_max, il_min
+    global il_max, il_min, il_hist
 
     il_max = None
     il_min = None
 
     curve_max.clear()
     curve_min.clear()
+    il_hist.clear()
+    hist_curve.clear()
 
     delta_label.setText("ΔIL = --")
 
@@ -111,7 +114,24 @@ curve5 = plot.plot(pen=pg.mkPen('magenta', width=5), name ='DAC')
 
 win2 = pg.GraphicsLayoutWidget(show=True, title="IL tracker")
 win2.resize(1500, 800) 
-plot2 = win2.addPlot(title="IL tracker") 
+plot2 = win2.addPlot(title="IL tracker")
+
+win2.nextColumn()
+
+hist_plot = win2.addPlot(title="IL Histogram")
+hist_plot.setLabel('bottom', 'IL (dB)')
+hist_plot.setLabel('left', 'Count')
+hist_plot.setTitle(
+    f"IL Histogram | N = {len(il_hist)}"
+)
+
+sample_count_text = pg.TextItem(
+    text="N = 0",
+    anchor=(1, 0),   # right-aligned
+    color='w'
+)
+hist_plot.addItem(sample_count_text)
+
 plot2.setYRange(0, -6) 
 plot2.setXRange(0, N) 
 plot2.addLegend() 
@@ -126,6 +146,27 @@ curve_min = plot2.plot(
     pen=pg.mkPen('magenta', width=5, style=QtCore.Qt.PenStyle.DashLine),
     name='IL Min'
 )
+hist_curve = pg.BarGraphItem(x=[], height=[], width=0.05)
+hist_plot.addItem(hist_curve)
+
+mean_line = pg.InfiniteLine(
+    angle=90,
+    pen=pg.mkPen('y', width=3)
+)
+hist_plot.addItem(mean_line)
+
+plus3sigma_line = pg.InfiniteLine(
+    angle=90,
+    pen=pg.mkPen('g', width=3, style=QtCore.Qt.PenStyle.DashLine)
+)
+hist_plot.addItem(plus3sigma_line)
+
+minus3sigma_line = pg.InfiniteLine(
+    angle=90,
+    pen=pg.mkPen('g', width=3, style=QtCore.Qt.PenStyle.DashLine)
+)
+hist_plot.addItem(minus3sigma_line)
+
 #curve5 = plot.plot(pen=pg.mkPen('m', width=5), name="ADC2 CH2")
 # ---------------- UPDATE FUNCTION ---------------- 
 def update():
@@ -143,8 +184,12 @@ def update():
                 adc2_ch0.append(c)
                 adc2_ch1.append(d)
                 dac.append(e)
-                il_value = np.log(f / 65535)
+                if f > 0:
+                    il_value = 10*np.log10(f/65535)
+                else:
+                    il_value = -60.0  # or whatever floor you want
                 il.append(il_value)
+                il_hist.append(il_value)
 
                 global il_max, il_min
 
@@ -153,6 +198,50 @@ def update():
 
                 if il_min is None or il_value < il_min:
                     il_min = il_value
+                
+                if len(il_hist) > 1:
+
+                    mu = np.mean(il_hist)
+                    sigma = np.std(il_hist)
+                    hist_plot.setTitle(f"IL Histogram | N = {len(il_hist)}")
+
+                    counts, bins = np.histogram(il_hist, bins=50)
+
+                    centers = (bins[:-1] + bins[1:]) / 2
+                    width = bins[1] - bins[0]
+
+                    hist_plot.clear()
+
+                    hist_curve = pg.BarGraphItem(
+                        x=centers,
+                        height=counts,
+                        width=width * 0.9
+                    )
+                    hist_plot.addItem(hist_curve)
+
+                    mean_line = pg.InfiniteLine(
+                        pos=mu,
+                        angle=90,
+                        pen=pg.mkPen('y', width=3)
+                    )
+
+                    plus3sigma_line = pg.InfiniteLine(
+                        pos=mu + 3*sigma,
+                        angle=90,
+                        pen=pg.mkPen('g', width=3,
+                                    style=QtCore.Qt.PenStyle.DashLine)
+                    )
+
+                    minus3sigma_line = pg.InfiniteLine(
+                        pos=mu - 3*sigma,
+                        angle=90,
+                        pen=pg.mkPen('g', width=3,
+                                    style=QtCore.Qt.PenStyle.DashLine)
+                    )
+
+                    hist_plot.addItem(mean_line)
+                    hist_plot.addItem(plus3sigma_line)
+                    hist_plot.addItem(minus3sigma_line)
 
             else:
                 log_box.appendPlainText(line)
@@ -173,16 +262,27 @@ def update():
     else:
         curve_min.clear()
 
-    if il_max is not None and il_min is not None:
+    if il_max is not None and il_min is not None and len(il_hist) > 1:
+
+        mu = np.mean(il_hist)
+        sigma = np.std(il_hist)
+
         delta_label.setText(
-        f"IL Max = {il_max:.4f}    IL Min = {il_min:.4f}    ΔIL = {il_max - il_min:.4f}"
+            f"IL Max = {il_max:.4f}    "
+            f"IL Min = {il_min:.4f}    "
+            f"ΔIL = {il_max - il_min:.4f}    "
+            f"μ = {mu:.4f}    "
+            f"σ = {sigma:.4f}"
         )
+    
+    n_samples = len(il_hist)
+    sample_count_text.setText(f"N = {n_samples}")
 
 
 
 # ---------------- TIMER ---------------- 
 timer = QtCore.QTimer() 
 timer.timeout.connect(update) 
-timer.start(20) # 50 FPS update loop 
+timer.start(10) # 50 FPS update loop 
 # ---------------- START ---------------- 
 app.exec_()
